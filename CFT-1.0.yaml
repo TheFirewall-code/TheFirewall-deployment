@@ -422,6 +422,21 @@ Resources:
         - [!Ref PublicSubnet1, !Ref PublicSubnet2]
         - [!Ref ExistingPublicSubnet1, !Ref ExistingPublicSubnet2]
 
+  ApplicationLoadBalancerBackend:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${Environment}-backend-alb
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets: !If 
+        - CreateVPC
+        - [!Ref PublicSubnet1, !Ref PublicSubnet2]
+        - [!Ref ExistingPublicSubnet1, !Ref ExistingPublicSubnet2]
+
   FrontendTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -460,16 +475,13 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref FrontendTargetGroup
 
-  BackendListenerRule:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+  BackendLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      ListenerArn: !Ref LoadBalancerListener
-      Priority: 1
-      Conditions:
-        - Field: path-pattern
-          Values: 
-            - /api/*
-      Actions:
+      LoadBalancerArn: !Ref ApplicationLoadBalancerBackend
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref BackendTargetGroup
 
@@ -509,7 +521,7 @@ Resources:
             - ContainerPort: 3000
           Environment:
             - Name: VITE_API_BASE_URL
-              Value: !Sub http://${ApplicationLoadBalancer.DNSName}/api
+              Value: !Sub http://${ApplicationLoadBalancerBackend.DNSName}
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -604,7 +616,7 @@ Resources:
 
   BackendService:
     Type: AWS::ECS::Service
-    DependsOn: LoadBalancerListener
+    DependsOn: BackendLoadBalancerListener
     Properties:
       ServiceName: !Sub ${Environment}-backend
       Cluster: !Ref ECSCluster
